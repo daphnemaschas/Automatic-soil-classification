@@ -53,12 +53,14 @@ class ArealdData(keras.utils.Sequence):
         img = np.clip(img, 0, 1)
         return img
 
+    @staticmethod
     def calculate_spectral_indices(img):
         """
         Calculates various spectral indices for Sentinel-2 data.
-        Input img shape: (height, width, bands)
         Sentinel-2 Band Mapping (0-indexed):
         B2 (Blue): 0 | B3 (Green): 1 | B4 (Red): 2 | B8 (NIR): 3 | B11 (SWIR1): 4 | B12 (SWIR2): 5
+        Args:
+            - img: (height, width, bands)
         """
         eps = 1e-8  # To avoid division by 0
         
@@ -90,3 +92,32 @@ class ArealdData(keras.utils.Sequence):
         indices['swir_heat'] = img[:, :, 5] 
 
         return indices
+    
+    def extract_pixel_features(self, image_paths, n_subsamples=5000):
+        """
+        Extracts pixels from multiple images to create a training set for K-Means/SVM.
+        Args:
+            - n_subsamples: number of pixels to take per image to avoid memory crashes.
+        """
+        all_features = []
+        
+        for path in image_paths:
+            with TiffFile(path) as tif:
+                img = tif.asarray().astype("float32") / 10000.0
+                
+                indices = self.calculate_spectral_indices(img)
+                
+                # Create a feature stack: RGB + NIR + NDVI + NDBI
+                feature_stack = np.stack([
+                    img[:,:,0], img[:,:,1], img[:,:,2], img[:,:,3], # B2, B3, B4, B8
+                    indices['ndvi'], 
+                    indices['ndbi']
+                ], axis=-1) # Shape: (H, W, 6)
+                flat_pixels = feature_stack.reshape(-1, 6) # (H*W, 6)
+                
+                # Subsample to keep the dataset manageable
+                n_pix = min(flat_pixels.shape[0], n_subsamples)
+                indices_resample = np.random.choice(flat_pixels.shape[0], n_pix, replace=False)
+                all_features.append(flat_pixels[indices_resample])
+                
+        return np.vstack(all_features)
