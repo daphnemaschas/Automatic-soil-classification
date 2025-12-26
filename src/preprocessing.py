@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import Dataset
 from tifffile import TiffFile
 
-class ArealdData(Dataset):
+class ArealData(Dataset):
     """PyTorch Dataset to iterate over satellite imagery."""
     def __init__(self, csv_file, root_dir, n_channels=4):
         """

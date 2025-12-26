@@ -14,7 +14,7 @@ class KMeansExperiment:
             self.config = yaml.safe_load(f)
         
         self.data_helper = ArealData(
-            csv_file=self.config['data']['csv_train'], 
+            csv_file=self.config['data']['train_dir'], 
             root_dir=self.config['data']['root_dir']
         )
         self.scaler = StandardScaler()
