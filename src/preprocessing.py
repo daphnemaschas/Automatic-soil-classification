@@ -1,23 +1,34 @@
 import os
 import numpy as np
+import pandas as pd
 import torch
 from torch.utils.data import Dataset
 from tifffile import TiffFile
 
 class ArealdData(Dataset):
     """PyTorch Dataset to iterate over satellite imagery."""
-    def __init__(self, input_img_paths, target_img_paths, img_size=(256, 256), n_channels=4):
-        self.img_size = img_size
-        self.input_img_paths = input_img_paths
-        self.target_img_paths = target_img_paths
-        self.n_channels = n_channels # Set to 4 if using RGB + NDVI
+    def __init__(self, csv_file, root_dir, n_channels=4):
+        """
+        Args:
+            csv_file: Path to the training CSV.
+            root_dir: Directory where the class folders (Forest/, River/, etc.) are.
+            n_channels: 4 for RGB + NDVI.
+        """
+        self.df = pd.read_csv(csv_file)
+        self.root_dir = root_dir
+        self.n_channels = n_channels
 
     def __len__(self):
-        return len(self.target_img_paths)
+        return len(self.df)
 
     def __getitem__(self, idx):
+        # Get path and label
+        img_rel_path = self.df.iloc[idx, 0]
+        label = self.df.iloc[idx, 1]
+        img_path = os.path.join(self.root_dir, img_rel_path)
+
         # Load and preprocess input
-        raw_img = self.load_tiff(self.input_img_paths[idx])
+        raw_img = self.load_tiff(img_path)
         normalized_img = self.preprocess_image(raw_img)
         idx_map = self.calculate_spectral_indices(normalized_img)
 
@@ -26,26 +37,25 @@ class ArealdData(Dataset):
             normalized_img[:,:,2], # Red
             normalized_img[:,:,1], # Green
             normalized_img[:,:,0], # Blue
-            idx_map['ndvi']        # Extra feature
-        ], axis=-1)
+            idx_map['ndvi']        # NDVI
+        ], axis=0)
 
-        # Load target (mask)
-        mask = self.load_tiff(self.target_img_paths[idx])
-        if mask.ndim == 2:
-            mask = np.expand_dims(mask, 0)
-        return torch.from_numpy(x).float(), torch.from_numpy(mask).long() # Converted to tensors
-
+        # In this new implementation of the project we are doing solely classification and not segmentation. Hence we won't use masks anymore
+        return torch.from_numpy(x).float(), torch.tensor(label, dtype=torch.long)
+    
     @staticmethod
     def load_tiff(filename):
         """Load a .tif file and return numpy array."""
         with TiffFile(filename) as tif:
-            return tif.asarray()
+            img = tif.asarray().astype("float32")
+            if img.shape[0] < img.shape[1]:
+                img = np.transpose(img, (1, 2, 0))
+            return img # (H, W, Bands)
         
     def preprocess_image(self, img):
         """Standardize Sentinel-2 reflectance values."""
         img = img.astype("float32") / 10000.0 # TO VERIFY, though Sentinel-2 L2A data is usually 0-10000
-        img = np.clip(img, 0, 1)
-        return img
+        return np.clip(img, 0, 1)
 
     @staticmethod
     def calculate_spectral_indices(img):
@@ -95,20 +105,19 @@ class ArealdData(Dataset):
         all_features = []
         
         for path in image_paths:
-            with TiffFile(path) as tif:
-                img = self.preprocess_image(self.load_tiff(path))
-                indices = self.calculate_spectral_indices(img)
-                # Create a feature stack: RGB + NIR + NDVI + NDBI
-                feature_stack = np.stack([
-                    img[:,:,0], img[:,:,1], img[:,:,2], img[:,:,3], # B2, B3, B4, B8
-                    indices['ndvi'], 
-                    indices['ndbi']
-                ], axis=-1) # Shape: (H, W, 6)
-                flat_pixels = feature_stack.reshape(-1, 6) # (H*W, 6)
-                
-                # Subsample to keep the dataset manageable
-                n_pix = min(flat_pixels.shape[0], n_subsamples)
-                indices_resample = np.random.choice(flat_pixels.shape[0], n_pix, replace=False)
-                all_features.append(flat_pixels[indices_resample])
-                
+            img = self.preprocess_image(self.load_tiff(path))
+            indices = self.calculate_spectral_indices(img)
+            # Create a feature stack: RGB + NIR + NDVI + NDBI
+            feature_stack = np.stack([
+                img[:,:,0], img[:,:,1], img[:,:,2], img[:,:,3], # B2, B3, B4, B8
+                indices['ndvi'], 
+                indices['ndbi']
+            ], axis=-1) # Shape: (H, W, 6)
+            flat_pixels = feature_stack.reshape(-1, 6) # (H*W, 6)
+            
+            # Subsample to keep the dataset manageable
+            n_pix = min(flat_pixels.shape[0], n_subsamples)
+            indices_resample = np.random.choice(flat_pixels.shape[0], n_pix, replace=False)
+            all_features.append(flat_pixels[indices_resample])
+            
         return np.vstack(all_features)

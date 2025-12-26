@@ -2,6 +2,7 @@ import os
 import yaml
 import numpy as np
 import matplotlib.pyplot as plt
+import glob
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 from src.preprocessing import ArealData
@@ -13,10 +14,8 @@ class KMeansExperiment:
             self.config = yaml.safe_load(f)
         
         self.data_helper = ArealData(
-            batch_size=1, 
-            img_size=tuple(self.config['data']['img_size']), 
-            input_img_paths=[], 
-            target_img_paths=[]
+            csv_file=self.config['data']['csv_train'], 
+            root_dir=self.config['data']['root_dir']
         )
         self.scaler = StandardScaler()
         self.model = KMeans(
@@ -27,12 +26,15 @@ class KMeansExperiment:
 
     def prepare_data(self):
         """Extracts and scales features from the dataset."""
-        train_dir = self.config['data']['train_dir']
-        img_paths = [os.path.join(train_dir, f) for f in os.listdir(train_dir) if f.endswith('.tif')]
-        
+        root_dir = self.config['data']['root_dir']
+        img_paths = glob.glob(os.path.join(root_dir, "**/*.tif"), recursive=True)
+
+        n_samples = min(len(img_paths), 500) # We limit the nb of samples for Kmeans
+        selected_paths = np.random.choice(img_paths, n_samples, replace=False)
+
         print(f"--- Extracting features from {len(img_paths)} images ---")
         X_train = self.data_helper.extract_pixel_features(
-            img_paths, 
+            selected_paths, 
             n_subsamples=self.config['kmeans']['batch_pixels']
         )
         return self.scaler.fit_transform(X_train)
@@ -48,8 +50,9 @@ class KMeansExperiment:
 
     def visualize_sample(self):
         """Generates a comparison plot between RGB and Clusters."""
-        train_dir = self.config['data']['train_dir']
-        sample_path = os.path.join(train_dir, os.listdir(train_dir)[0])
+        root_dir = self.config['data']['root_dir']
+        img_paths = glob.glob(os.path.join(root_dir, "**/*.tif"), recursive=True)
+        sample_path = np.random.choice(img_paths)
         
         # Process image
         raw_img = self.data_helper.load_tiff(sample_path)
