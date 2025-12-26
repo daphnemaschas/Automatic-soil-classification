@@ -1,3 +1,11 @@
+"""
+EuroSAT Land Use Classification Experiment Module.
+
+This module encapsulates the training, validation, and testing logic for 
+training a Convolutional Neural Network (CNN) on the EuroSAT dataset.
+It handles data loading, model orchestration, and performance tracking.
+"""
+
 import torch
 import yaml
 import os
@@ -8,14 +16,30 @@ from src.preprocessing import ArealData
 from src.models import EuroSATCNN
 
 class EuroSATExperiment:
+    """
+    Orchestrator for EuroSAT CNN experiments.
+    
+    Attributes:
+        config (dict): Configuration parameters loaded from a YAML file.
+        device (torch.device): The hardware device (CPU/GPU) used for computation.
+        model (nn.Module): The initialized CNN architecture.
+        optimizer (torch.optim): Optimizer for updating model weights.
+        criterion (nn.Module): Loss function (CrossEntropy).
+        best_val_acc (float): Highest validation accuracy achieved during training.
+        history (dict): Dictionary storing training loss and validation metrics.
+    """
     def __init__(self, config_path="config.yaml"):
-        # 1. Chargement de la config
+        """
+        Initializes the experiment with configuration, model, and hardware setup.
+
+        Args:
+            config_path (str): Path to the YAML configuration file.
+        """
         with open(config_path, "r") as f:
             self.config = yaml.safe_load(f)
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
-        # 2. Initialisation des modèles et outils
         self.model = EuroSATCNN(
             in_channels=self.config['model']['in_channels'], 
             n_classes=self.config['model']['n_classes']
@@ -31,7 +55,16 @@ class EuroSATExperiment:
         self.history = {'train_loss': [], 'val_acc': [], 'val_loss': []}
 
     def _get_loader(self, csv_key, shuffle=False):
-        """Méthode interne pour créer les DataLoaders."""
+        """
+        Creates a DataLoader for a specific data split.
+
+        Args:
+            csv_key (str): The key in the config['data'] dict pointing to the CSV file.
+            shuffle (bool): Whether to shuffle the data (typically True for training).
+
+        Returns:
+            DataLoader: A PyTorch DataLoader instance.
+        """
         dataset = ArealData(
             csv_file=self.config['data'][csv_key], 
             root_dir=self.config['data']['root_dir']
@@ -44,6 +77,14 @@ class EuroSATExperiment:
         )
 
     def run_epoch(self, train_loader, val_loader, epoch):
+        """
+        Executes one training epoch and one validation pass.
+
+        Args:
+            train_loader (DataLoader): DataLoader for training data.
+            val_loader (DataLoader): DataLoader for validation data.
+            epoch (int): Current epoch index.
+        """
         # Train
         self.model.train()
         running_loss = 0.0
@@ -79,6 +120,16 @@ class EuroSATExperiment:
             print(f"New Best Model Saved ({val_acc:.2f}%)")
 
     def evaluate(self, loader, desc="Evaluation"):
+        """
+        Evaluates the model on a given dataset without updating weights.
+
+        Args:
+            loader (DataLoader): The DataLoader to evaluate.
+            desc (str): Description for the progress bar.
+
+        Returns:
+            tuple: (Average Loss, Accuracy Percentage)
+        """
         self.model.eval()
         total_loss = 0.0
         correct = 0
@@ -98,6 +149,9 @@ class EuroSATExperiment:
         return total_loss / len(loader), 100 * correct / total
 
     def train(self):
+        """
+        Starts the full training process for the number of epochs specified in config.
+        """
         print(f"--- Starting Experiment on {self.device} ---")
         train_loader = self._get_loader('train_dir', shuffle=True)
         val_loader = self._get_loader('validation_dir', shuffle=False)
@@ -106,6 +160,12 @@ class EuroSATExperiment:
             self.run_epoch(train_loader, val_loader, epoch)
             
     def test(self):
+        """
+        Runs a final evaluation on the test set using the best saved model.
+
+        Returns:
+            float: Test accuracy.
+        """
         print("\n--- Final Test Evaluation ---")
         if os.path.exists(self.config['model']['model_path']):
             self.model.load_state_dict(torch.load(self.config['model']['model_path']))
