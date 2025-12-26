@@ -1,45 +1,39 @@
 import os
 import numpy as np
-from tensorflow import keras
+import torch
+from torch.utils.data import Dataset
 from tifffile import TiffFile
 
-class ArealdData(keras.utils.Sequence):
-    """Helper to iterate over the data (as Numpy arrays)."""
-    def __init__(self, batch_size, img_size, input_img_paths, target_img_paths, n_channels=4):
-        self.batch_size = batch_size
+class ArealdData(Dataset):
+    """PyTorch Dataset to iterate over satellite imagery."""
+    def __init__(self, input_img_paths, target_img_paths, img_size=(256, 256), n_channels=4):
         self.img_size = img_size
         self.input_img_paths = input_img_paths
         self.target_img_paths = target_img_paths
         self.n_channels = n_channels # Set to 4 if using RGB + NDVI
 
     def __len__(self):
-        return len(self.target_img_paths) // self.batch_size
+        return len(self.target_img_paths)
 
     def __getitem__(self, idx):
-        i = idx * self.batch_size
-        batch_input_img_paths = self.input_img_paths[i : i + self.batch_size]
-        batch_target_img_paths = self.target_img_paths[i : i + self.batch_size]
+        # Load and preprocess input
+        raw_img = self.load_tiff(self.input_img_paths[idx])
+        normalized_img = self.preprocess_image(raw_img)
+        idx_map = self.calculate_spectral_indices(normalized_img)
 
-        # Initialization of arrays (X: images, Y: masks/labels)
-        x = np.zeros((self.batch_size,) + self.img_size + (3,), dtype="float32")
-        y = np.zeros((self.batch_size,) + self.img_size + (1,), dtype="uint8")
+        # Stack channels: RGB (B4, B3, B2) + NDVI
+        x = np.stack([
+            normalized_img[:,:,2], # Red
+            normalized_img[:,:,1], # Green
+            normalized_img[:,:,0], # Blue
+            idx_map['ndvi']        # Extra feature
+        ], axis=-1)
 
-        for j, path in enumerate(batch_input_img_paths):
-            raw_img = self.load_tiff(path)
-            normalized_img = self.preprocess_image(raw_img)
-            idx_map = self.calculate_spectral_indices(normalized_img)
-            # Stack channels: RGB (B4, B3, B2) + NDVI
-            x[j] = np.stack([
-                normalized_img[:,:,2], # Red
-                normalized_img[:,:,1], # Green
-                normalized_img[:,:,0], # Blue
-                idx_map['ndvi']        # Extra feature
-            ], axis=-1)
-
-        for j, path in enumerate(batch_target_img_paths):
-            y[j] = np.expand_dims(self.load_tiff(path), -1)
-
-        return x, y
+        # Load target (mask)
+        mask = self.load_tiff(self.target_img_paths[idx])
+        if mask.ndim == 2:
+            mask = np.expand_dims(mask, 0)
+        return torch.from_numpy(x).float(), torch.from_numpy(mask).long() # Converted to tensors
 
     @staticmethod
     def load_tiff(filename):
@@ -87,8 +81,7 @@ class ArealdData(keras.utils.Sequence):
         # 5. BSI (Bare Soil Index)
         indices['bsi'] = ((b11 + b4) - (b8 + b2)) / ((b11 + b4) + (b8 + b2) + eps)
 
-        # 6. SWIR (Direct Heat/Fire detection) 
-        # Usually visualized directly using Band 12
+        # 6. SWIR (Direct Heat/Fire detection), usually visualized directly using Band 12
         indices['swir_heat'] = img[:, :, 5] 
 
         return indices
@@ -103,10 +96,8 @@ class ArealdData(keras.utils.Sequence):
         
         for path in image_paths:
             with TiffFile(path) as tif:
-                img = tif.asarray().astype("float32") / 10000.0
-                
+                img = self.preprocess_image(self.load_tiff(path))
                 indices = self.calculate_spectral_indices(img)
-                
                 # Create a feature stack: RGB + NIR + NDVI + NDBI
                 feature_stack = np.stack([
                     img[:,:,0], img[:,:,1], img[:,:,2], img[:,:,3], # B2, B3, B4, B8

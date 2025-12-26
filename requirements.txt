@@ -1,0 +1,14 @@
+# Data Processing
+numpy
+pandas
+
+# Visualisation
+matplotlib
+seaborn
+
+# Configuration
+pyyaml
+
+# Models
+torch
+scikit-learn
