@@ -13,7 +13,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from src.preprocessing import ArealData
-from src.models import EuroSATCNN
+from src.models.cnn_classifier import EuroSATCNN
 
 class EuroSATExperiment:
     """
