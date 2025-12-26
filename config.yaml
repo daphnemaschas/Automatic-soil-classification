@@ -1,0 +1,14 @@
+data:
+  train_dir: "data/train/images/"
+  output_dir: "results/"
+  img_size: [256, 256]
+
+kmeans:
+  n_clusters: 8
+  batch_pixels: 10000
+  random_state: 42
+  n_init: 10
+
+features:
+  n_features: 6 # Blue, Green, Red, NIR, NDVI, NDBI
+  bands_order: [2, 1, 0] # For RGB visualization
