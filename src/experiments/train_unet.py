@@ -1,7 +1,7 @@
 import random
 from tensorflow import keras
 from src.preprocessing import ArealdData
-from experiments.models import get_unet
+from src.models import get_unet
 
 # Paths
 input_path = "./data/train/images"
