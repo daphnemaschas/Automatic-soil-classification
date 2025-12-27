@@ -41,13 +41,13 @@ class EuroSATExperiment:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         self.model = EuroSATCNN(
-            in_channels=self.config['model']['in_channels'], 
-            n_classes=self.config['model']['n_classes']
+            in_channels=self.config['classification']['model']['in_channels'], 
+            n_classes=self.config['classification']['model']['n_classes']
         ).to(self.device)
         
         self.optimizer = torch.optim.Adam(
             self.model.parameters(), 
-            lr=self.config['model']['learning_rate']
+            lr=self.config['classification']['model']['learning_rate']
         )
         self.criterion = nn.CrossEntropyLoss()
         
@@ -59,19 +59,19 @@ class EuroSATExperiment:
         Creates a DataLoader for a specific data split.
 
         Args:
-            csv_key (str): The key in the config['data'] dict pointing to the CSV file.
+            csv_key (str): The key in the config['classification']['data'] dict pointing to the CSV file.
             shuffle (bool): Whether to shuffle the data (typically True for training).
 
         Returns:
             DataLoader: A PyTorch DataLoader instance.
         """
         dataset = ArealData(
-            csv_file=self.config['data'][csv_key], 
-            root_dir=self.config['data']['root_dir']
+            csv_file=self.config['classification']['data'][csv_key], 
+            root_dir=self.config['classification']['data']['root_dir']
         )
         return DataLoader(
             dataset, 
-            batch_size=self.config['model']['batch_size'], 
+            batch_size=self.config['classification']['model']['batch_size'], 
             shuffle=shuffle, 
             num_workers=2
         )
@@ -88,7 +88,7 @@ class EuroSATExperiment:
         # Train
         self.model.train()
         running_loss = 0.0
-        loop = tqdm(train_loader, desc=f"Epoch [{epoch+1}/{self.config['model']['epochs']}]", unit="batch")
+        loop = tqdm(train_loader, desc=f"Epoch [{epoch+1}/{self.config['classification']['model']['epochs']}]", unit="batch")
         
         for images, labels in loop:
             images, labels = images.to(self.device), labels.to(self.device)
@@ -116,7 +116,7 @@ class EuroSATExperiment:
         
         if val_acc > self.best_val_acc:
             self.best_val_acc = val_acc
-            torch.save(self.model.state_dict(), self.config['model']['model_path'])
+            torch.save(self.model.state_dict(), self.config['classification']['model']['model_path'])
             print(f"New Best Model Saved ({val_acc:.2f}%)")
 
     def evaluate(self, loader, desc="Evaluation"):
@@ -156,7 +156,7 @@ class EuroSATExperiment:
         train_loader = self._get_loader('train_dir', shuffle=True)
         val_loader = self._get_loader('validation_dir', shuffle=False)
         
-        for epoch in range(self.config['model']['epochs']):
+        for epoch in range(self.config['classification']['model']['epochs']):
             self.run_epoch(train_loader, val_loader, epoch)
             
     def test(self):
@@ -167,8 +167,8 @@ class EuroSATExperiment:
             float: Test accuracy.
         """
         print("\n--- Final Test Evaluation ---")
-        if os.path.exists(self.config['model']['model_path']):
-            self.model.load_state_dict(torch.load(self.config['model']['model_path']))
+        if os.path.exists(self.config['classification']['model']['model_path']):
+            self.model.load_state_dict(torch.load(self.config['classification']['model']['model_path']))
         
         test_loader = self._get_loader('test_dir', shuffle=False)
         loss, acc = self.evaluate(test_loader, desc="Test Set")

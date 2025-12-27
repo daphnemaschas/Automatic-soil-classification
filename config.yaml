@@ -1,25 +1,35 @@
-data:
-  train_dir: "data/EuroSATallBands/train.csv"
-  test_dir: "data/EuroSATallBands/test.csv"
-  validation_dir: "data/EuroSATallBands/validation.csv"
-  root_dir: "data/EuroSATallBands"
-  output_dir: "results/"
-  img_size: [256, 256]
+classification:
+  data:
+    train_dir: "data/EuroSATallBands/train.csv"
+    test_dir: "data/EuroSATallBands/test.csv"
+    validation_dir: "data/EuroSATallBands/validation.csv"
+    root_dir: "data/EuroSATallBands"
+    output_dir: "results/"
+    img_size: [256, 256]
 
-kmeans:
-  n_clusters: 9 # HerbaceousVegetation, River, Highway, Residential, Pasture, Industrial, SeaLake, Annual Crop, Permanent Crop
-  batch_pixels: 2000
-  random_state: 42
-  n_init: 10
+  kmeans:
+    n_clusters: 9 # HerbaceousVegetation, River, Highway, Residential, Pasture, Industrial, SeaLake, Annual Crop, Permanent Crop
+    batch_pixels: 2000
+    random_state: 42
+    n_init: 10
 
-features:
-  n_features: 6 # Blue, Green, Red, NIR, NDVI, NDBI
-  bands_order: [2, 1, 0] # For RGB visualization
+  features:
+    n_features: 6 # Blue, Green, Red, NIR, NDVI, NDBI
+    bands_order: [2, 1, 0] # For RGB visualization
 
-model:
-  in_channels: 4                       # RGB + NDVI
-  n_classes: 10                        # Les 10 classes EuroSAT
-  batch_size: 32
-  learning_rate: 0.001
-  epochs: 20
-  model_path: "results/eurosat_cnn.pth"
+  model:
+    in_channels: 4                       # RGB + NDVI
+    n_classes: 10                        # Les 10 classes EuroSAT
+    batch_size: 32
+    learning_rate: 0.001
+    epochs: 20
+    model_path: "results/eurosat_cnn.pth"
+
+segmentation:
+  data:
+    train_dir: "data/SpaceNet8/Louisiana-East_Training_Public"
+    test_dir: "data/SpaceNet8/Louisiana-West_Test_Publics"
+  model:
+    architecture: "unet"
+    in_channels: 3
+    out_classes: 2 # Exemple: 0=Fond, 1=Bâtiment

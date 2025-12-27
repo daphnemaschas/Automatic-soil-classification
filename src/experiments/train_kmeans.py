@@ -14,19 +14,19 @@ class KMeansExperiment:
             self.config = yaml.safe_load(f)
         
         self.data_helper = ArealData(
-            csv_file=self.config['data']['train_dir'], 
-            root_dir=self.config['data']['root_dir']
+            csv_file=self.config['classification']['data']['train_dir'], 
+            root_dir=self.config['classification']['data']['root_dir']
         )
         self.scaler = StandardScaler()
         self.model = KMeans(
-            n_clusters=self.config['kmeans']['n_clusters'],
-            random_state=self.config['kmeans']['random_state'],
-            n_init=self.config['kmeans']['n_init']
+            n_clusters=self.config['classification']['kmeans']['n_clusters'],
+            random_state=self.config['classification']['kmeans']['random_state'],
+            n_init=self.config['classification']['kmeans']['n_init']
         )
 
     def prepare_data(self):
         """Extracts and scales features from the dataset."""
-        root_dir = self.config['data']['root_dir']
+        root_dir = self.config['classification']['data']['root_dir']
         img_paths = glob.glob(os.path.join(root_dir, "**/*.tif"), recursive=True)
 
         n_samples = min(len(img_paths), 500) # We limit the nb of samples for Kmeans
@@ -35,7 +35,7 @@ class KMeansExperiment:
         print(f"--- Extracting features from {len(img_paths)} images ---")
         X_train = self.data_helper.extract_pixel_features(
             selected_paths, 
-            n_subsamples=self.config['kmeans']['batch_pixels']
+            n_subsamples=self.config['classification']['kmeans']['batch_pixels']
         )
         return self.scaler.fit_transform(X_train)
 
@@ -50,7 +50,7 @@ class KMeansExperiment:
 
     def visualize_sample(self):
         """Generates a comparison plot between RGB and Clusters."""
-        root_dir = self.config['data']['root_dir']
+        root_dir = self.config['classification']['data']['root_dir']
         img_paths = glob.glob(os.path.join(root_dir, "**/*.tif"), recursive=True)
         sample_path = np.random.choice(img_paths)
         
@@ -82,10 +82,10 @@ class KMeansExperiment:
         plt.imshow(rgb_img[:,:,[2,1,0]]) # Show B4, B3, B2
         
         plt.subplot(1, 2, 2)
-        plt.title(f"K-Means (k={self.config['kmeans']['n_clusters']})")
+        plt.title(f"K-Means (k={self.config['classification']['kmeans']['n_clusters']})")
         plt.imshow(pred_map, cmap='terrain')
         
-        out_path = os.path.join(self.config['data']['output_dir'], "kmeans_result.png")
+        out_path = os.path.join(self.config['classification']['data']['output_dir'], "kmeans_result.png")
         plt.savefig(out_path)
         print(f"--- Result saved to {out_path} ---")
 
