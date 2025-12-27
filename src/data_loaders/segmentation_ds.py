@@ -64,7 +64,7 @@ class SpaceNet8Dataset(Dataset):
         
         # Read the mask
         with rasterio.open(self.mask_paths[index]) as src:
-            mask = src.read(1).astype(np.int64) # Les classes sont des entiers (0, 1, 2...)
+            mask = src.read(1).astype(np.int64)
 
         if self.transform:
             augmented = self.transform(image=img, mask=mask)

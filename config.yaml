@@ -26,10 +26,20 @@ classification:
     model_path: "results/eurosat_cnn.pth"
 
 segmentation:
-  data:
+  data: 
     train_dir: "data/SpaceNet8/Louisiana-East_Training_Public"
+    train_mapping: "data/SpaceNet8/Louisiana-East_Training_Public/Louisiana-East_Training_Public_label_image_mapping.csv"
+    train_masks: "data/SpaceNet8/Louisiana-East_Training_Public/masks_multiclass"
+    
     test_dir: "data/SpaceNet8/Louisiana-West_Test_Publics"
+    test_mapping: "data/SpaceNet8/Louisiana-West_Test_Public/Louisiana-West_Test_Public_label_image_mapping.csv"
+    test_masks: "data/SpaceNet8/Louisiana-West_Test_Public/masks_multiclass"
+    
+    # File where png msks are stored after rasterization
+    mask_dir: "data/SpaceNet8/Louisiana-East_Training_Public/masks_generated"
   model:
     architecture: "unet"
     in_channels: 3
-    out_classes: 2 # Exemple: 0=Fond, 1=Bâtiment
+    n_classes: 5 # 0:bg, 1:build, 2:flood_build, 3:road, 4:flood_road
+    batch_size: 4
+    learning_rate: 0.0001

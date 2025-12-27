@@ -11,7 +11,9 @@ This script orchestrates the training pipeline for the U-Net model:
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, train_test_split
+from torch.utils.data import DataLoader
+from torchmetrics import Accuracy, Precision, F1Score
+from sklearn.model_selection import train_test_split
 import pandas as pd
 import os
 import yaml
@@ -21,48 +23,6 @@ import numpy as np
 from src.models.unet import UNet
 from src.data_loaders.segmentation_ds import SpaceNet8Dataset
 
-class DiceLoss(nn.Module):
-    """
-    Computes the Dice Loss for binary segmentation tasks.
-    
-    Dice Loss is derived from the Sorensen-Dice coefficient and is 
-    highly effective at handling class imbalance by maximizing the 
-    spatial overlap between the prediction and the ground truth.
-
-    Attributes:
-        smooth (float): A small constant added to the numerator and 
-            denominator to prevent division by zero and stabilize training.
-    """
-    def __init__(self, smooth=1.0):
-        """
-        Initializes the DiceLoss module.
-
-        Args:
-            smooth (float): Smoothing factor for numerical stability.
-        """
-        super(DiceLoss, self).__init__()
-        self.smooth = smooth
-
-    def forward(self, preds, targets):
-        """
-        Calculates the Dice Loss between predictions and targets.
-
-        Args:
-            preds (torch.Tensor): Model output logits or probabilities. 
-                Shape: (Batch, 1, H, W).
-            targets (torch.Tensor): Ground truth binary masks. 
-                Shape: (Batch, 1, H, W).
-
-        Returns:
-            torch.Tensor: Scalar loss value.
-        """
-        preds = torch.sigmoid(preds)
-        preds = preds.view(-1)
-        targets = targets.view(-1)
-        
-        intersection = (preds * targets).sum()
-        dice = (2. * intersection + self.smooth) / (preds.sum() + targets.sum() + self.smooth)
-        return 1 - dice
 
 class SegmentationExperiment:
     """
@@ -105,12 +65,36 @@ class SegmentationExperiment:
         )
         
         # Combination of Losses for better building footprint extraction
-        self.bce_loss = nn.BCEWithLogitsLoss()
-        self.dice_loss = DiceLoss()
+        self.criterion = nn.CrossEntropyLoss()
         
-        self.best_loss = float('inf')
+        self.best_f1 = 0.0
 
-    def prepare_data(self):
+        metric_args = {'task': 'multiclass', 'num_classes': self.n_classes, 'average': 'macro'}
+        
+        self.acc_metric = Accuracy(**metric_args).to(self.device)
+        self.prec_metric = Precision(**metric_args).to(self.device)
+        self.f1_metric = F1Score(**metric_args).to(self.device)
+
+    def _load_paths(self, mode='train'):
+        if mode == 'train':
+            csv_path = self.config['segmentation']['data']['train_mapping']
+            mask_dir = self.config['segmentation']['data']['train_mask']
+        else:
+            csv_path = self.config['segmentation']['data']['test_mapping']
+            mask_dir = self.config['segmentation']['data']['test_mask']
+
+        df = pd.read_csv(csv_path)
+        img_paths = df['preimg'].tolist()
+        
+        # On reconstruit le nom du masque : image.tif -> image_mask.png
+        mask_paths = [
+            os.path.join(mask_dir, os.path.basename(p).replace('.tif', '_mask.png')) 
+            for p in img_paths
+        ]
+    
+        return img_paths, mask_paths
+
+    def prepare_data(self, mode='train'):
         """
         Parses the mapping CSV and splits data into training and validation sets.
 
@@ -120,34 +104,27 @@ class SegmentationExperiment:
         Returns:
             tuple: (train_loader, val_loader) instances.
         """
-        df = pd.read_csv(self.config['segmentation']['data']['mapping_csv'])
+        img_paths, mask_paths = self._load_paths(mode=mode)
         
-        # Reconstruct paths for generated masks
-        mask_dir = self.config['segmentation']['data']['mask_dir']
-        img_paths = df['preimg'].tolist()
-        mask_paths = [
-            os.path.join(mask_dir, os.path.basename(p).replace('.tif', '_mask.png')) 
-            for p in img_paths
-        ]
-        
-        # Split data
-        train_img, val_img, train_mask, val_mask = train_test_split(
-            img_paths, mask_paths, test_size=0.2, random_state=42
-        )
-        
-        train_ds = SpaceNet8Dataset(train_img, train_mask)
-        val_ds = SpaceNet8Dataset(val_img, val_mask)
-        
-        train_loader = DataLoader(
-            train_ds, batch_size=self.config['segmentation']['model']['batch_size'], 
-            shuffle=True, num_workers=4
-        )
-        val_loader = DataLoader(
-            val_ds, batch_size=self.config['segmentation']['model']['batch_size'], 
-            shuffle=False, num_workers=4
-        )
-        
-        return train_loader, val_loader
+        if mode == 'train':
+            # Internal split for validation (Louisiana-East)
+            t_img, v_img, t_mask, v_mask = train_test_split(
+                img_paths, mask_paths, test_size=0.2, random_state=42
+            )
+            train_loader = DataLoader(
+                SpaceNet8Dataset(t_img, t_mask), 
+                batch_size=self.config['segmentation']['model']['batch_size'], 
+                shuffle=True, num_workers=4
+            )
+            val_loader = DataLoader(
+                SpaceNet8Dataset(v_img, v_mask), 
+                batch_size=self.config['segmentation']['model']['batch_size'], 
+                shuffle=False, num_workers=4
+            )
+            return train_loader, val_loader
+        else:
+            # Full loader for Louisiana-West
+            return DataLoader(SpaceNet8Dataset(img_paths, mask_paths), batch_size=1)
 
     def train_epoch(self, loader, epoch):
         """
@@ -167,13 +144,13 @@ class SegmentationExperiment:
         for images, masks in loop:
             images = images.to(self.device)
             # Add channel dimension to masks for BCE loss (B, 1, H, W)
-            masks = masks.unsqueeze(1).float().to(self.device)
+            masks = masks.to(self.device).long()
             
             self.optimizer.zero_grad()
             outputs = self.model(images)
             
             # Hybrid Loss
-            loss = self.bce_loss(outputs, masks) + self.dice_loss(outputs, masks)
+            loss = self.criterion(outputs, masks)
             
             loss.backward()
             self.optimizer.step()
@@ -183,7 +160,7 @@ class SegmentationExperiment:
             
         return total_loss / len(loader)
 
-    def validate(self, loader):
+    def validate(self, loader, mode="Validation"):
         """
         Evaluates the model on the validation set.
 
@@ -195,14 +172,47 @@ class SegmentationExperiment:
         """
         self.model.eval()
         total_loss = 0
+
+        self.acc_metric.reset()
+        self.prec_metric.reset()
+        self.f1_metric.reset()
+
         with torch.no_grad():
             for images, masks in loader:
                 images = images.to(self.device)
-                masks = masks.unsqueeze(1).float().to(self.device)
+                masks = masks.to(self.device).long()
+
                 outputs = self.model(images)
-                loss = self.bce_loss(outputs, masks) + self.dice_loss(outputs, masks)
+                loss = self.criterion(outputs, masks)
                 total_loss += loss.item()
-        return total_loss / len(loader)
+
+                preds = torch.argmax(outputs, dim=1)
+
+                self.acc_metric.update(preds, masks)
+                self.prec_metric.update(preds, masks)
+                self.f1_metric.update(preds, masks)
+        
+        avg_loss = total_loss / len(loader)
+        acc = self.acc_metric.compute()
+        prec = self.prec_metric.compute()
+        f1 = self.f1_metric.compute()
+
+        print(f"\n[{mode}] Loss: {avg_loss:.4f} | Acc: {acc:.4f} | Prec: {prec:.4f} | F1: {f1:.4f}")
+        return avg_loss, f1
+    
+    def test(self):
+        """
+        Final evaluation on unseen Louisiana-West data.
+        """
+        print("\n--- Final Test Evaluation (Louisiana-West) ---")
+        path = self.config['segmentation']['model']['model_path']
+        if os.path.exists(path):
+            self.model.load_state_dict(torch.load(path))
+            print(f"Loaded best model from {path}")
+        
+        test_loader = self.prepare_data(mode='test')
+        loss, f1 = self.validate(test_loader, mode="TEST")
+        return loss, f1
 
     def run(self):
         """
@@ -217,14 +227,14 @@ class SegmentationExperiment:
         epochs = self.config['segmentation']['model']['epochs']
         for epoch in range(epochs):
             train_loss = self.train_epoch(train_loader, epoch)
-            val_loss = self.validate(val_loader)
+            val_loss, val_f1 = self.validate(val_loader)
             
-            print(f"Epoch {epoch+1}: Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f}")
+            print(f"Epoch {epoch+1}: Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | Val F1: {val_f1:.4f}")
             
-            if val_loss < self.best_loss:
-                self.best_loss = val_loss
+            if val_f1 > self.best_f1:
+                self.best_f1 = val_f1
                 torch.save(self.model.state_dict(), self.config['segmentation']['model']['model_path'])
-                print(f"Best Model Saved (Loss: {val_loss:.4f})")
+                print(f"Best Model Saved (Loss: {val_loss:.4f}, F1: {val_f1:.4f})")
 
 if __name__ == "__main__":
     experiment = SegmentationExperiment()

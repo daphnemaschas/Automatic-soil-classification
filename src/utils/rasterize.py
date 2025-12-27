@@ -54,14 +54,8 @@ def rasterize_spacenet8(csv_path, output_mask_dir):
                     mask = np.zeros(out_shape, dtype=np.uint8)
                 else:
                     # Burn the geometry into a mask
-                    mask = features.rasterize(
-                        [(shape, 1) for shape in gdf.geometry],
-                        out_shape=out_shape,
-                        transform=transform,
-                        fill=0,
-                        all_touched=True,
-                        dtype=np.uint8
-                    )
+                    shapes = ((geom, value) for geom, value in zip(gdf.geometry, gdf['class_id']))
+                    mask = features.rasterize(shapes, out_shape=out_shape, transform=transform)
             except Exception as e:
                 print(f"Erreur sur {geojson_path}: {e}")
                 mask = np.zeros(out_shape, dtype=np.uint8)
