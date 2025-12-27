@@ -224,7 +224,7 @@ class SegmentationExperiment:
             if val_loss < self.best_loss:
                 self.best_loss = val_loss
                 torch.save(self.model.state_dict(), self.config['segmentation']['model']['model_path'])
-                print(f"--> Best Model Saved (Loss: {val_loss:.4f})")
+                print(f"Best Model Saved (Loss: {val_loss:.4f})")
 
 if __name__ == "__main__":
     experiment = SegmentationExperiment()
