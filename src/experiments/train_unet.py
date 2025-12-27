@@ -25,7 +25,7 @@ class DiceLoss(nn.Module):
     """
     Computes the Dice Loss for binary segmentation tasks.
     
-    Dice Loss is derived from the Sørensen–Dice coefficient and is 
+    Dice Loss is derived from the Sorensen-Dice coefficient and is 
     highly effective at handling class imbalance by maximizing the 
     spatial overlap between the prediction and the ground truth.
 
