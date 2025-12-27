@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import glob
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
-from src.preprocessing import ArealData
+from src.data_loaders.classification_ds import ArealData
 
 class KMeansExperiment:
     def __init__(self, config_path="config.yaml"):
