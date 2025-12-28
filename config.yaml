@@ -45,6 +45,6 @@ segmentation:
     in_channels: 3
     n_classes: 5 # 0:bg, 1:build, 2:flood_build, 3:road, 4:flood_road
     batch_size: 5
-    epochs: 4
+    epochs: 10
     learning_rate: 0.0001
     model_path: "results/spacenet8_unet.pth"
