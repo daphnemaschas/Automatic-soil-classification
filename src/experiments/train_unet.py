@@ -20,6 +20,7 @@ import yaml
 from tqdm import tqdm
 import numpy as np
 
+from src.utils.loss import dice_loss
 from src.models.unet import UNet
 from src.data_loaders.segmentation_ds import SpaceNet8Dataset
 
@@ -52,11 +53,12 @@ class SegmentationExperiment:
             self.config = yaml.safe_load(f)
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.n_classes = self.config['segmentation']['model']['n_classes']
         
         # Initialize U-Net
         self.model = UNet(
             in_channels=self.config['segmentation']['model']['in_channels'],
-            out_channels=self.config['segmentation']['model']['n_classes']
+            out_channels=self.n_classes
         ).to(self.device)
         
         self.optimizer = optim.Adam(
@@ -78,21 +80,32 @@ class SegmentationExperiment:
     def _load_paths(self, mode='train'):
         if mode == 'train':
             csv_path = self.config['segmentation']['data']['train_mapping']
-            mask_dir = self.config['segmentation']['data']['train_mask']
+            mask_dir = self.config['segmentation']['data']['train_masks']
+            img_dir = self.config['segmentation']['data']['train_img_dir']
         else:
             csv_path = self.config['segmentation']['data']['test_mapping']
-            mask_dir = self.config['segmentation']['data']['test_mask']
+            mask_dir = self.config['segmentation']['data']['test_masks']
+            img_dir = self.config['segmentation']['data']['test_img_dir']
 
         df = pd.read_csv(csv_path)
-        img_paths = df['preimg'].tolist()
+        img_paths = [
+            os.path.join(img_dir, p) for p in df['pre-event image'].tolist()
+        ]
         
-        # On reconstruit le nom du masque : image.tif -> image_mask.png
         mask_paths = [
             os.path.join(mask_dir, os.path.basename(p).replace('.tif', '_mask.png')) 
             for p in img_paths
         ]
+
+        if not os.path.exists(img_paths[0]):
+            print(f"ERROR: this path doesn't exist {img_paths[0]}") # DEBUG
     
         return img_paths, mask_paths
+    
+    def _compute_loss(self, outputs, masks):
+        ce_loss = self.criterion(outputs, masks)
+        d_loss = dice_loss(outputs, masks, self.n_classes)
+        return ce_loss + d_loss
 
     def prepare_data(self, mode='train'):
         """
@@ -141,7 +154,13 @@ class SegmentationExperiment:
         total_loss = 0
         loop = tqdm(loader, desc=f"Epoch {epoch+1}", unit="batch")
         
-        for images, masks in loop:
+        for batch_idx, (images, masks) in enumerate(loop):
+            # DEBUG 
+            if batch_idx == 0:
+                print(f"\n[DEBUG] Epoch {epoch+1} - Premier Batch:")
+                print(f"   -> Images shape: {images.shape}") # (B, C, H, W)
+                print(f"   -> Masks shape:  {masks.shape}")  # (B, H, W)
+            
             images = images.to(self.device)
             # Add channel dimension to masks for BCE loss (B, 1, H, W)
             masks = masks.to(self.device).long()
@@ -150,7 +169,7 @@ class SegmentationExperiment:
             outputs = self.model(images)
             
             # Hybrid Loss
-            loss = self.criterion(outputs, masks)
+            loss = self._compute_loss(outputs, masks)
             
             loss.backward()
             self.optimizer.step()
@@ -183,7 +202,7 @@ class SegmentationExperiment:
                 masks = masks.to(self.device).long()
 
                 outputs = self.model(images)
-                loss = self.criterion(outputs, masks)
+                loss = self._compute_loss(outputs, masks)
                 total_loss += loss.item()
 
                 preds = torch.argmax(outputs, dim=1)

@@ -8,6 +8,8 @@ It utilizes rasterio for efficient geospatial data reading.
 
 import torch
 from torch.utils.data import Dataset
+import torchvision.transforms.functional as TF
+from PIL import Image
 import rasterio
 import numpy as np
 
@@ -25,7 +27,7 @@ class SpaceNet8Dataset(Dataset):
         transform (callable, optional): A function/transform (e.g., Albumentations) 
             that takes in an image and a mask and returns the transformed versions.
     """
-    def __init__(self, img_paths, mask_paths, transform=None):
+    def __init__(self, img_paths, mask_paths, transform=None, target_size=(256, 256)): # (256, 256) to reduce the time spend treating each image
         """
         Initializes the dataset with image and mask file paths.
 
@@ -37,6 +39,7 @@ class SpaceNet8Dataset(Dataset):
         self.img_paths = img_paths
         self.mask_paths = mask_paths
         self.transform = transform
+        self.target_size = target_size
     
     def __len__(self):
         """
@@ -63,11 +66,19 @@ class SpaceNet8Dataset(Dataset):
             img = src.read([1, 2, 3]).astype(np.float32) / 255.0
         
         # Read the mask
-        with rasterio.open(self.mask_paths[index]) as src:
-            mask = src.read(1).astype(np.int64)
+        mask = np.array(Image.open(self.mask_paths[index])).astype(np.int64)
+
+        img_tensor = torch.from_numpy(img) # (3, H, W)
+        mask_tensor = torch.from_numpy(mask) # (H, W)
+
+        # Resize
+        img_tensor = TF.resize(img_tensor, self.target_size, antialias=True)
+        
+        mask_tensor = TF.resize(mask_tensor.unsqueeze(0), self.target_size, 
+                                interpolation=TF.InterpolationMode.NEAREST).squeeze(0)
 
         if self.transform:
-            augmented = self.transform(image=img, mask=mask)
-            img, mask = augmented['image'], augmented['mask']
+            augmented = self.transform(image=img_tensor, mask=mask_tensor)
+            img_tensor, mask_tensor = augmented['image'], augmented['mask']
 
-        return torch.from_numpy(img), torch.from_numpy(mask)
+        return img_tensor, mask_tensor
